@@ -1,0 +1,40 @@
+services:
+  drowsy-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+
+  retrain:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    command: ["python", "scripts/retrain_once.py"]
+    volumes:
+      - ./:/app
+    profiles:
+      - tools
+
+  monitor-camera:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    command: ["python", "scripts/run_monitor.py", "--source", "0"]
+    environment:
+      - DISPLAY=${DISPLAY}
+    volumes:
+      - ./:/app
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    devices:
+      - "${CAMERA_DEVICE:-/dev/video0}:${CAMERA_DEVICE:-/dev/video0}"
+    profiles:
+      - camera

@@ -1,0 +1,52 @@
+name: retrain
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * 1"
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Configure AWS credentials
+        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Pull dataset from S3
+        if: ${{ vars.TRAIN_DATASET_S3_URI != '' }}
+        run: aws s3 sync "${{ vars.TRAIN_DATASET_S3_URI }}" ./data/train_data
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Train candidate
+        env:
+          DATASET_PATH: ./data/train_data
+        run: python scripts/train_model.py
+
+      - name: Find latest candidate
+        id: candidate
+        shell: bash
+        run: |
+          latest="$(find ./artifacts/runs -name manifest.json | sort | tail -n 1)"
+          echo "manifest=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Promote candidate
+        run: python scripts/promote_model.py --candidate "${{ steps.candidate.outputs.manifest }}"
+
+      - name: Publish production artifacts to S3
+        if: ${{ vars.MODEL_ARTIFACTS_S3_URI != '' }}
+        run: aws s3 sync ./artifacts/production "${{ vars.MODEL_ARTIFACTS_S3_URI }}"
