@@ -29,6 +29,7 @@ Check camera:
 
 ```bash
 cd ~/ARK
+sudo apt install -y alsa-utils
 python scripts/check_camera.py
 ```
 

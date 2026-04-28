@@ -17,6 +17,7 @@ Open another terminal and run the camera monitor on the Linux host:
 cd ~/ARK
 python3.10 -m venv .venv
 source .venv/bin/activate
+sudo apt install -y alsa-utils
 pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 python scripts/check_camera.py
@@ -79,4 +80,3 @@ If the preview window does not open, make sure a graphical desktop session is ru
 ```bash
 echo $DISPLAY
 ```
-
