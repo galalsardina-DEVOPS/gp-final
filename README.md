@@ -54,6 +54,7 @@ Open:
 ```text
 http://localhost:8000/healthz
 http://localhost:8000/docs
+http://localhost:8000/dashboard
 ```
 
 Run retraining with Docker:
@@ -152,6 +153,55 @@ Use the promoted model:
 
 ```env
 LOCAL_MODEL_PATH=./artifacts/production/model.keras
+```
+
+Install weekly retraining on Linux:
+
+```bash
+bash scripts/install_weekly_retraining_cron.sh
+```
+
+## Dashboard And Logs
+
+The API stores predictions in SQLite:
+
+```env
+EVENT_DB_PATH=./artifacts/events.db
+```
+
+Open the dashboard:
+
+```text
+http://localhost:8000/dashboard
+```
+
+Useful endpoints:
+
+```text
+/metrics
+/events
+```
+
+The real-time monitor also logs drowsy events and saves frames into:
+
+```text
+artifacts/drowsy_frames/
+```
+
+## Upload Drowsy Frames To S3
+
+Enable S3 uploads in `.env`:
+
+```env
+S3_UPLOAD_ENABLED=true
+S3_BUCKET=drowsy-driver-galal-demo
+S3_PREFIX=drowsy-events
+```
+
+The Raspberry Pi or Linux machine must have AWS credentials configured:
+
+```bash
+aws configure
 ```
 
 ## Documentation

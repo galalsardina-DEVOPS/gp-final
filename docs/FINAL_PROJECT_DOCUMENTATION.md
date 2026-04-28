@@ -44,14 +44,17 @@ Labeled frames
 
 ## Main Components
 
-- `app/main.py`: FastAPI API with `/healthz` and `/predict`.
+- `app/main.py`: FastAPI API with `/healthz`, `/predict`, `/dashboard`, `/metrics`, and `/events`.
 - `scripts/run_monitor.py`: starts the real-time monitor.
 - `scripts/check_camera.py`: checks webcam availability.
 - `scripts/label_frames.py`: labels frames as `alert` or `drowsy`.
 - `scripts/retrain_once.py`: runs one retraining cycle.
+- `scripts/install_weekly_retraining_cron.sh`: installs weekly retraining on Linux.
 - `src/drowsy_platform/monitor.py`: face landmark logic, EAR, MAR, and overlay.
 - `src/drowsy_platform/hybrid.py`: chooses remote AWS or local fallback.
 - `src/drowsy_platform/training.py`: trains and promotes a candidate model.
+- `src/drowsy_platform/event_logger.py`: stores events in SQLite.
+- `src/drowsy_platform/s3_uploader.py`: uploads drowsy frames to S3.
 - `docker-compose.yml`: runs API, retraining, and optional Linux camera service.
 
 ## Detection Method
@@ -104,6 +107,49 @@ artifacts/production/model.keras
 artifacts/production/manifest.json
 ```
 
+Weekly retraining can be installed with:
+
+```bash
+bash scripts/install_weekly_retraining_cron.sh
+```
+
+## Dashboard And Database
+
+The system stores prediction and drowsy events in SQLite:
+
+```env
+EVENT_DB_PATH=./artifacts/events.db
+```
+
+Dashboard:
+
+```text
+http://localhost:8000/dashboard
+```
+
+API endpoints:
+
+```text
+/metrics
+/events
+```
+
+The dashboard shows total events, drowsy events, alert predictions, remote route usage, local route usage, and recent logs.
+
+## S3 Drowsy Frame Upload
+
+The monitor can save drowsy frames locally and upload them to S3.
+
+```env
+DROWSY_FRAME_CAPTURE_ENABLED=true
+DROWSY_FRAME_DIR=./artifacts/drowsy_frames
+S3_UPLOAD_ENABLED=true
+S3_BUCKET=drowsy-driver-galal-demo
+S3_PREFIX=drowsy-events
+```
+
+This allows collecting future training examples automatically.
+
 ## AWS Deployment
 
 The practical AWS demo uses:
@@ -130,9 +176,10 @@ The project includes:
 2. Open `/healthz` to prove the API is running.
 3. Run the real-time monitor with camera.
 4. Show `ALERT` and `DROWSY` overlay.
-5. Run `docker compose run --rm retrain`.
-6. Show the promoted model in `artifacts/production`.
-7. Explain hybrid mode with AWS endpoint and local fallback.
+5. Open `/dashboard` and show event counts.
+6. Run `docker compose run --rm retrain`.
+7. Show the promoted model in `artifacts/production`.
+8. Explain hybrid mode with AWS endpoint and local fallback.
 
 ## Limitations
 
@@ -147,4 +194,3 @@ The project includes:
 - Add automatic upload of new camera samples to S3.
 - Add alert sound and dashboard logging.
 - Deploy remote inference using ECS/Fargate or SageMaker.
-

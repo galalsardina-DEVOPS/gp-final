@@ -17,6 +17,13 @@ def _float_env(name: str, default: float) -> float:
     return float(os.getenv(name, default))
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _optional_env(name: str, default: str | None = None) -> str | None:
     value = os.getenv(name, default)
     if value is None:
@@ -51,6 +58,13 @@ class ServiceSettings:
     yawn_alarm_frames: int
     fusion_ear_gate: float
     alarm_audio_path: Path
+    event_db_path: Path
+    drowsy_event_cooldown_seconds: float
+    drowsy_frame_capture_enabled: bool
+    drowsy_frame_dir: Path
+    s3_upload_enabled: bool
+    s3_bucket: str | None
+    s3_prefix: str
 
     @property
     def input_size(self) -> tuple[int, int]:
@@ -81,6 +95,13 @@ class ServiceSettings:
             yawn_alarm_frames=_int_env("YAWN_ALARM_FRAMES", 20),
             fusion_ear_gate=_float_env("FUSION_EAR_GATE", 0.23),
             alarm_audio_path=Path(os.getenv("ALARM_AUDIO_PATH", "./alarm.wav")).resolve(),
+            event_db_path=Path(os.getenv("EVENT_DB_PATH", "./artifacts/events.db")).resolve(),
+            drowsy_event_cooldown_seconds=_float_env("DROWSY_EVENT_COOLDOWN_SECONDS", 10.0),
+            drowsy_frame_capture_enabled=_bool_env("DROWSY_FRAME_CAPTURE_ENABLED", True),
+            drowsy_frame_dir=Path(os.getenv("DROWSY_FRAME_DIR", "./artifacts/drowsy_frames")).resolve(),
+            s3_upload_enabled=_bool_env("S3_UPLOAD_ENABLED", False),
+            s3_bucket=_optional_env("S3_BUCKET"),
+            s3_prefix=os.getenv("S3_PREFIX", "drowsy-events").strip().strip("/"),
         )
 
 

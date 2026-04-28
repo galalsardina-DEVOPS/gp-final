@@ -8,3 +8,4 @@ pydantic==2.10.3
 tensorflow==2.15.1
 opencv-python==4.10.0.84
 mediapipe==0.10.14
+boto3==1.35.86

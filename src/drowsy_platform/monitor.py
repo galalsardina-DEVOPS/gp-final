@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+import shutil
+import subprocess
+import time
 from typing import Any
+import wave
 
 import cv2
 import mediapipe as mp
 import numpy as np
 
 from drowsy_platform.config import ServiceSettings
+from drowsy_platform.event_logger import DrowsyEvent, EventLogger
 from drowsy_platform.hybrid import HybridClassifier
 from drowsy_platform.models.base import PredictionResult
+from drowsy_platform.s3_uploader import S3Uploader
 
 LEFT_EYE = [33, 160, 158, 133, 153, 144]
 RIGHT_EYE = [362, 385, 387, 263, 373, 380]
@@ -36,6 +44,7 @@ class MonitorState:
     frame_count: int = 0
     cnn_result: bool = False
     last_prediction: PredictionResult | None = None
+    last_event_at: float = 0.0
     ear_history: list[float] = field(default_factory=list)
 
 
@@ -51,6 +60,15 @@ class DriverMonitor:
         )
         self._alarm_loaded = False
         self._alarm_enabled = False
+        self._last_bell_at = 0.0
+        self._last_aplay_at = 0.0
+        self._aplay_path = shutil.which("aplay")
+        self.event_logger = EventLogger(settings.event_db_path)
+        self.s3_uploader = (
+            S3Uploader(settings.s3_bucket, settings.s3_prefix)
+            if settings.s3_upload_enabled and settings.s3_bucket
+            else None
+        )
         self._load_alarm()
 
     def run(self, source: int | str = 0) -> None:
@@ -110,6 +128,7 @@ class DriverMonitor:
         self._draw_overlay(resized, ear, mar, drowsy)
         if drowsy:
             self._play_alarm_once()
+            self._record_drowsy_event(resized, ear, mar)
 
         return resized
 
@@ -211,13 +230,111 @@ class DriverMonitor:
             self._alarm_enabled = False
 
     def _play_alarm_once(self) -> None:
-        if not self._alarm_enabled or not self.settings.alarm_audio_path.exists():
+        if self._alarm_enabled and self.settings.alarm_audio_path.exists():
+            if not self._alarm_loaded:
+                self._pygame.mixer.music.load(str(self.settings.alarm_audio_path))
+                self._alarm_loaded = True
+
+            if not self._pygame.mixer.music.get_busy():
+                self._pygame.mixer.music.play()
             return
 
-        if not self._alarm_loaded:
-            self._pygame.mixer.music.load(str(self.settings.alarm_audio_path))
-            self._alarm_loaded = True
+        if self._play_with_aplay():
+            return
 
-        if not self._pygame.mixer.music.get_busy():
-            self._pygame.mixer.music.play()
+        self._terminal_bell()
+
+    def _terminal_bell(self) -> None:
+        now = time.monotonic()
+        if now - self._last_bell_at < 1.5:
+            return
+        print("\a", end="", flush=True)
+        self._last_bell_at = now
+
+    def _play_with_aplay(self) -> bool:
+        if not self._aplay_path:
+            return False
+
+        now = time.monotonic()
+        if now - self._last_aplay_at < 1.5:
+            return True
+
+        path = self.settings.alarm_audio_path
+        if not path.exists():
+            path = self.settings.event_db_path.parent / "generated_alarm.wav"
+            self._ensure_generated_alarm(path)
+
+        try:
+            subprocess.Popen(
+                [self._aplay_path, str(path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._last_aplay_at = now
+            return True
+        except OSError:
+            return False
+
+    @staticmethod
+    def _ensure_generated_alarm(path: Path) -> None:
+        if path.exists():
+            return
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        sample_rate = 8000
+        duration_seconds = 0.45
+        frequency = 880
+        amplitude = 16000
+        sample_count = int(sample_rate * duration_seconds)
+
+        with wave.open(str(path), "w") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            for index in range(sample_count):
+                phase = (index * frequency // sample_rate) % 2
+                value = amplitude if phase == 0 else -amplitude
+                wav_file.writeframesraw(int(value).to_bytes(2, byteorder="little", signed=True))
+
+    def _record_drowsy_event(self, frame: np.ndarray, ear: float, mar: float) -> None:
+        now = time.monotonic()
+        if now - self.state.last_event_at < self.settings.drowsy_event_cooldown_seconds:
+            return
+
+        self.state.last_event_at = now
+        frame_path = self._save_drowsy_frame(frame) if self.settings.drowsy_frame_capture_enabled else None
+        s3_uri = self._upload_frame(frame_path) if frame_path else None
+        prediction = self.state.last_prediction
+
+        self.event_logger.log(
+            DrowsyEvent(
+                source="monitor",
+                label="drowsy",
+                score=prediction.score if prediction else None,
+                route=prediction.route if prediction else "local",
+                backend=prediction.backend if prediction else None,
+                ear=ear,
+                mar=mar,
+                frame_path=str(frame_path) if frame_path else None,
+                s3_uri=s3_uri,
+                metadata={"frame_count": self.state.frame_count},
+            )
+        )
+
+    def _save_drowsy_frame(self, frame: np.ndarray) -> Path | None:
+        self.settings.drowsy_frame_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        path = self.settings.drowsy_frame_dir / f"drowsy_{timestamp}_{self.state.frame_count}.jpg"
+        if cv2.imwrite(str(path), frame):
+            return path
+        return None
+
+    def _upload_frame(self, frame_path: Path | None) -> str | None:
+        if not frame_path or not self.s3_uploader:
+            return None
+        try:
+            return self.s3_uploader.upload_file(frame_path)
+        except Exception as exc:
+            print(f"S3 upload failed: {exc}")
+            return None
 

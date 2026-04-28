@@ -14,6 +14,7 @@ Open:
 ```text
 http://localhost:8000/healthz
 http://localhost:8000/docs
+http://localhost:8000/dashboard
 ```
 
 Expected result:
@@ -78,7 +79,27 @@ artifacts/production/model.keras exists.
 artifacts/production/manifest.json exists.
 ```
 
-## 4. Hybrid Mode
+Install weekly retraining:
+
+```bash
+bash scripts/install_weekly_retraining_cron.sh
+```
+
+## 4. Dashboard And Logs
+
+Open:
+
+```text
+http://localhost:8000/dashboard
+```
+
+Expected result:
+
+```text
+The dashboard shows total events, drowsy events, route counts, and recent logs.
+```
+
+## 5. Hybrid Mode
 
 In `.env`:
 
@@ -96,11 +117,12 @@ When AWS is reachable, route is remote.
 When AWS is stopped or internet is unavailable, route falls back to local.
 ```
 
-## 5. Presentation Talking Points
+## 6. Presentation Talking Points
 
 ```text
 The project detects driver drowsiness using face landmarks and a CNN model.
 It supports hybrid inference: AWS when online, local model when offline.
 It includes an auto-retraining pipeline that trains a candidate model and promotes it if it passes metrics.
+It saves drowsy events in SQLite, shows them in a dashboard, and can upload drowsy frames to S3.
 Docker Compose is used to run the API and retraining job consistently across machines.
 ```
