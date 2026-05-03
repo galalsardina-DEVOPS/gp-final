@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 import cv2
 
@@ -16,7 +17,7 @@ def main() -> None:
     found = False
 
     for index in range(args.max_index + 1):
-        cap = cv2.VideoCapture(index)
+        cap = cv2.VideoCapture(index, cv2.CAP_DSHOW) if sys.platform.startswith("win") else cv2.VideoCapture(index)
         ok, frame = cap.read()
         cap.release()
 

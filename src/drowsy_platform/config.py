@@ -112,9 +112,15 @@ class TrainingSettings:
     model_type: str
     base_weights: str | None
     epochs: int
+    fine_tune_epochs: int
+    fine_tune_layers: int
     batch_size: int
     validation_split: float
     learning_rate: float
+    fine_tune_learning_rate: float
+    augmentation_enabled: bool
+    class_weight_enabled: bool
+    early_stopping_patience: int
     random_seed: int
     image_width: int
     image_height: int
@@ -133,9 +139,15 @@ class TrainingSettings:
             model_type=os.getenv("TRAIN_MODEL_TYPE", "simple").strip().lower(),
             base_weights=_optional_env("TRAIN_BASE_WEIGHTS", "none"),
             epochs=_int_env("TRAIN_EPOCHS", 10),
+            fine_tune_epochs=_int_env("TRAIN_FINE_TUNE_EPOCHS", 0),
+            fine_tune_layers=_int_env("TRAIN_FINE_TUNE_LAYERS", 20),
             batch_size=_int_env("TRAIN_BATCH_SIZE", 32),
             validation_split=_float_env("TRAIN_VALIDATION_SPLIT", 0.2),
             learning_rate=_float_env("TRAIN_LEARNING_RATE", 0.001),
+            fine_tune_learning_rate=_float_env("TRAIN_FINE_TUNE_LEARNING_RATE", 0.00005),
+            augmentation_enabled=_bool_env("TRAIN_AUGMENTATION_ENABLED", True),
+            class_weight_enabled=_bool_env("TRAIN_CLASS_WEIGHT_ENABLED", True),
+            early_stopping_patience=_int_env("TRAIN_EARLY_STOPPING_PATIENCE", 4),
             random_seed=_int_env("TRAIN_RANDOM_SEED", 42),
             image_width=_int_env("MODEL_INPUT_WIDTH", 224),
             image_height=_int_env("MODEL_INPUT_HEIGHT", 224),

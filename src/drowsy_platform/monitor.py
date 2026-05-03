@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import time
 from typing import Any
 import wave
@@ -63,6 +65,8 @@ class DriverMonitor:
         self._last_bell_at = 0.0
         self._last_aplay_at = 0.0
         self._aplay_path = shutil.which("aplay")
+        self._prediction_executor = ThreadPoolExecutor(max_workers=1)
+        self._prediction_future: Future[PredictionResult] | None = None
         self.event_logger = EventLogger(settings.event_db_path)
         self.s3_uploader = (
             S3Uploader(settings.s3_bucket, settings.s3_prefix)
@@ -72,7 +76,11 @@ class DriverMonitor:
         self._load_alarm()
 
     def run(self, source: int | str = 0) -> None:
-        cap = cv2.VideoCapture(source)
+        if isinstance(source, str) and source.strip().lower() in {"pi", "rpi", "picamera2"}:
+            self._run_picamera2()
+            return
+
+        cap = cv2.VideoCapture(source, cv2.CAP_DSHOW) if sys.platform.startswith("win") and isinstance(source, int) else cv2.VideoCapture(source)
         if not cap.isOpened():
             raise RuntimeError(f"Could not open source: {source}")
 
@@ -88,7 +96,38 @@ class DriverMonitor:
                 if cv2.waitKey(25) & 0xFF == ord("q"):
                     break
         finally:
+            self._prediction_executor.shutdown(wait=False, cancel_futures=True)
             cap.release()
+            cv2.destroyAllWindows()
+
+    def _run_picamera2(self) -> None:
+        try:
+            from picamera2 import Picamera2
+        except ImportError as exc:
+            raise RuntimeError(
+                "Picamera2 source requires Raspberry Pi OS and python3-picamera2. "
+                "Install it with: sudo apt install -y python3-picamera2"
+            ) from exc
+
+        camera = Picamera2()
+        config = camera.create_preview_configuration(
+            main={"size": (640, 480), "format": "BGR888"}
+        )
+        camera.configure(config)
+        camera.start()
+        time.sleep(0.5)
+
+        try:
+            while True:
+                frame = camera.capture_array()
+                annotated = self._process_frame(frame)
+                cv2.imshow("Hybrid Driver Monitoring", annotated)
+
+                if cv2.waitKey(25) & 0xFF == ord("q"):
+                    break
+        finally:
+            self._prediction_executor.shutdown(wait=False, cancel_futures=True)
+            camera.stop()
             cv2.destroyAllWindows()
 
     def _process_frame(self, frame: np.ndarray) -> np.ndarray:
@@ -109,15 +148,12 @@ class DriverMonitor:
 
         ear = self._smooth_ear((eye_aspect_ratio(left_eye) + eye_aspect_ratio(right_eye)) / 2.0)
         mar = mouth_aspect_ratio(mouth)
+        self._consume_prediction_result()
 
         face_roi = self._extract_face_roi(face_landmarks, resized)
         if face_roi is not None and self.state.frame_count % self.settings.cnn_every_n_frames == 0:
             rgb_face = cv2.cvtColor(face_roi, cv2.COLOR_BGR2RGB)
-            self.state.last_prediction = self.classifier.predict_array(
-                rgb_face,
-                metadata={"frame_count": self.state.frame_count},
-            )
-            self.state.cnn_result = self.state.last_prediction.label == "drowsy"
+            self._submit_prediction(rgb_face)
 
         ear_drowsy = self._update_eye_counter(ear)
         yawn_detected = self._update_yawn_counter(mar)
@@ -131,6 +167,30 @@ class DriverMonitor:
             self._record_drowsy_event(resized, ear, mar)
 
         return resized
+
+    def _submit_prediction(self, rgb_face: np.ndarray) -> None:
+        if self._prediction_future and not self._prediction_future.done():
+            return
+
+        metadata = {"frame_count": self.state.frame_count}
+        self._prediction_future = self._prediction_executor.submit(
+            self.classifier.predict_array,
+            rgb_face,
+            None,
+            metadata,
+        )
+
+    def _consume_prediction_result(self) -> None:
+        if not self._prediction_future or not self._prediction_future.done():
+            return
+
+        try:
+            self.state.last_prediction = self._prediction_future.result()
+            self.state.cnn_result = self.state.last_prediction.label == "drowsy"
+        except Exception as exc:
+            print(f"Prediction failed: {exc}")
+        finally:
+            self._prediction_future = None
 
     def _extract_points(self, face_landmarks: Any, frame: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         h, w, _ = frame.shape

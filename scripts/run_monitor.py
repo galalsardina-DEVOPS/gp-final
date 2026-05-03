@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
+import traceback
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -38,11 +39,20 @@ def main() -> None:
 def _camera_index_available(source: int) -> bool:
     import cv2
 
-    cap = cv2.VideoCapture(source)
+    cap = cv2.VideoCapture(source, cv2.CAP_DSHOW) if sys.platform.startswith("win") else cv2.VideoCapture(source)
     ok, frame = cap.read()
     cap.release()
     return bool(ok and frame is not None)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        crash_log = ROOT / "artifacts" / "monitor_crash.log"
+        crash_log.parent.mkdir(parents=True, exist_ok=True)
+        crash_text = traceback.format_exc()
+        crash_log.write_text(crash_text, encoding="utf-8")
+        print(f"Monitor crashed. Full traceback written to: {crash_log}")
+        print(crash_text)
+        sys.exit(1)

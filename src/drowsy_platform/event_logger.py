@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 
-@dataclass(slots=True)
+@dataclass
 class DrowsyEvent:
     source: str
     label: str
@@ -132,4 +132,3 @@ class EventLogger:
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_label ON events(label)")
-

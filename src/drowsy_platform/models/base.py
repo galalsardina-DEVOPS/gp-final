@@ -10,7 +10,7 @@ class ModelUnavailableError(RuntimeError):
     """Raised when a model backend cannot serve a prediction."""
 
 
-@dataclass(slots=True)
+@dataclass
 class PredictionResult:
     label: str
     score: float
