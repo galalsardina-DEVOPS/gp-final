@@ -54,7 +54,7 @@ class HybridClassifier:
                 f"Unsupported SERVICE_MODE '{mode}'. Use 'hybrid', 'remote_only', or 'local_only'."
             )
 
-        if self.remote_classifier and self.is_online():
+        if self.remote_classifier:
             try:
                 return self._predict_remote(image, image_b64=image_b64, metadata=metadata)
             except ModelUnavailableError:
